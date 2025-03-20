@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workload Prioritization</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .visualization-container {
+            width: 800px;
+            margin: 0 auto 40px auto;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .controls {
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        h2 {
+	    font-family: Verdana;
+            margin-top: 0;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="visualization-container">
+        <h2>P99 Latencies</h2>
+        <canvas id="latencyChart" width="800" height="400"></canvas>
+    </div>
+
+    <div class="visualization-container">
+        <h2>Workload Prioritization</h2>
+        <div class="controls">
+            <label for="speedControl">Simulation Speed:</label>
+            <input type="range" id="speedControl" min="1" max="5" value="1" step="0.1">
+            <span id="speedValue">1x</span>
+        </div>
+        <canvas id="latencyCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <script>
+        // Get the first canvas - Chart.js visualization
+        const chartCtx = document.getElementById('latencyChart').getContext('2d');
+
+        // Speed control value display
+        const speedControl = document.getElementById('speedControl');
+        const speedValue = document.getElementById('speedValue');
+        speedControl.addEventListener('input', () => {
+            speedValue.textContent = `${speedControl.value}x`;
+        });
+
+        // Initial data points with more realistic values
+        let timeLabels = ['0s', '5s', '10s', '15s', '20s', '25s', '30s'];
+        
+        // Non-prioritized workload (red): Higher baseline with occasional spikes
+        let latencyBefore = [25, 22, 48, 28, 20, 35, 42];
+        
+        // Prioritized workload (green): Consistently between 1-10ms
+        let latencyAfter = [7, 5, 8, 4, 6, 8, 3];
+
+        // Create the chart
+        const latencyChart = new Chart(chartCtx, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    {
+                        label: 'Other databases',
+                        data: latencyBefore,
+                        borderColor: 'rgba(220, 53, 69, 1)',
+                        backgroundColor: 'rgba(220, 53, 69, 0.2)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                        fill: true,
+                        tension: 0.2 // Slight curve for more natural look
+                    },
+                    {
+                        label: 'ScyllaDB',
+                        data: latencyAfter,
+                        borderColor: 'rgba(40, 167, 69, 1)',
+                        backgroundColor: 'rgba(40, 167, 69, 0.2)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                        fill: true,
+                        tension: 0.2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: {
+                    duration: 1500
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        suggestedMax: 60, // Set initial y-axis scale
+                        title: { 
+                            display: true, 
+                            text: 'P99 Latency (ms)',
+                            font: {
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    x: {
+                        title: { 
+                            display: true, 
+                            text: 'Time',
+                            font: {
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'P99 Over Time',
+                        font: {
+                            size: 16
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.raw}ms`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Generate more realistic latency values
+        function getNextNonPrioritizedLatency(currentValue) {
+            // 15% chance of a significant spike
+            if (Math.random() < 0.15) {
+                return Math.floor(Math.random() * 30) + 35; // Spike between 35-65ms
+            }
+            
+            // Otherwise, vary around the baseline (15-30ms)
+            const change = Math.random() * 10 - 3; // Tendency to drift slightly upward
+            let newValue = currentValue + change;
+            
+            // Keep within reasonable bounds for non-prioritized workload
+            return Math.max(15, Math.min(30, newValue));
+        }
+
+        function getNextPrioritizedLatency() {
+            // Generate values between 1-9ms with tendency toward middle range
+            return Math.max(1, Math.min(9, 5 + (Math.random() * 8 - 4)));
+        }
+
+        // Update the chart every 5 seconds with new data
+        setInterval(() => {
+            // Add new time label
+            let newTime = `${parseInt(timeLabels[timeLabels.length - 1]) + 5}s`;
+            timeLabels.push(newTime);
+            
+            // Generate new latency values
+            const newBeforeLatency = getNextNonPrioritizedLatency(latencyBefore[latencyBefore.length - 1]);
+            let newAfterLatency = getNextPrioritizedLatency();
+            
+            // Ensure prioritized latency is always lower
+            if (newAfterLatency >= newBeforeLatency) {
+                newAfterLatency = Math.max(1, newBeforeLatency * 0.25);
+            }
+            
+            latencyBefore.push(newBeforeLatency);
+            latencyAfter.push(newAfterLatency);
+
+            // Keep the chart showing the most recent 15 data points
+            if (timeLabels.length > 15) {
+                timeLabels.shift();
+                latencyBefore.shift();
+                latencyAfter.shift();
+            }
+
+            latencyChart.update();
+        }, 5000);
+    </script>
+    <script>
+        // Get the second canvas - Queue visualization
+        const queueCanvas = document.getElementById("latencyCanvas");
+        const queueCtx = queueCanvas.getContext("2d");
+
+        // Request class to manage requests in the queue
+        class Request {
+            constructor(x, priority, weight, queueIndex) {
+                this.x = x;  // Initial horizontal position (X-axis)
+                this.initialX = x; // For future resets (if needed)
+                this.weight = weight || Math.random() * 10 + 5;  // Weight: larger dots are heavier requests
+                this.speed = priority === 'high' ? 3 : 1;  // Speed differs by priority
+                this.priority = priority;
+                this.color = priority === 'high' ? 'orange' : 'blue';  // High-priority is orange, low is blue
+                this.size = priority === 'high' ? 8 : 15;  // Orange is smaller (high-priority), blue is larger (low-priority)
+                this.queueIndex = queueIndex; // Track which queue the dot belongs to
+                this.blocked = false; // Block flag for waiting behind low-priority requests
+            }
+
+            // Update the position of the request (dot)
+            update() {
+                let speedMultiplier = parseFloat(document.getElementById("speedControl").value);
+
+                // Base speeds (original values)
+                let baseHighSpeed = 3;
+                let baseLowSpeed = 1;
+
+                // Apply multiplier
+                let highSpeed = baseHighSpeed * speedMultiplier;
+                let lowSpeed = baseLowSpeed * speedMultiplier;
+
+                // Find the closest request ahead in the same queue
+                let nextRequest = requests
+                    .filter(req => req.queueIndex === this.queueIndex && req.x > this.x)
+                    .sort((a, b) => a.x - b.x)[0];
+
+                if (this.priority === 'high') {
+                    if (nextRequest) {
+                        let distance = nextRequest.x - this.x;
+                        this.speed = distance < this.size * 2 ? Math.max(1, distance / this.size) : highSpeed;
+                    } else {
+                        this.speed = highSpeed;
+                    }
+                } else {
+                    this.speed = lowSpeed;
+                }
+
+                // Move request
+                this.x += this.speed;
+            }
+
+            // Draw the current dot at its position (in the queue line)
+            draw() {
+                const yPosition = this.queueIndex === 0 ? 100 : 250;  // Y-position changes based on queue index
+                queueCtx.beginPath();
+                queueCtx.arc(this.x, yPosition, this.size, 0, Math.PI * 2);
+                queueCtx.fillStyle = this.color;
+                queueCtx.fill();
+            }
+        }
+
+        // Arrays to store requests (dots) and manage queues
+        let requests = [];
+        let highPriorityQueue = [];
+        let lowPriorityQueue = [];
+        let timePassed = 0;  // Track the passage of time for switching priorities
+        let resetTime = 1200;  // Set the time when we will revert back to a single queue (e.g. 300 time units)
+
+        // Add initial requests to the array (a mix of high and low priorities)
+        for (let i = 0; i < 10; i++) {
+            let priority = Math.random() < 0.9 ? 'high' : 'low';  // 90% chance for high-priority
+            let weight = Math.random() * 10 + 5;  // Random weight for each request
+            requests.push(new Request(50 + i * 40, priority, weight, 0));
+        }
+
+        // Function to handle queue updates and prioritization switch
+        function updateQueue() {
+            timePassed += 1;
+
+            // Update the position of requests based on the queue state
+            requests.forEach(req => {
+                req.update();
+            });
+
+            // After 150 time units, split into two queues
+            if (timePassed > 600) {
+                // Split requests into separate high and low priority queues
+                highPriorityQueue = requests.filter(req => req.priority === 'high');
+                lowPriorityQueue = requests.filter(req => req.priority === 'low');
+
+                // Re-assign the queue index for new separate queues
+                highPriorityQueue.forEach(req => req.queueIndex = 0); // High priority queue is on top (Y = 100)
+                lowPriorityQueue.forEach(req => req.queueIndex = 1); // Low priority queue is below (Y = 250)
+            }
+
+            // After the reset time, revert back to a single queue
+            if (timePassed > resetTime) {
+                requests.forEach(req => req.queueIndex = 0);  // Reset all requests back to the top queue (single queue)
+                timePassed = 0; // Reset time counter
+                highPriorityQueue = [];
+                lowPriorityQueue = [];
+            }
+        }
+
+        let dotGenerationInterval = 100; // Set the delay in milliseconds (500ms = half a second)
+        let lastGenerationTime = 0;
+
+        function animate(timestamp) {
+            // If the difference between the last generation and current timestamp is large enough, generate new dots
+            if (timestamp - lastGenerationTime > dotGenerationInterval) {
+                lastGenerationTime = timestamp;
+
+                // Generate a new dot with the correct logic
+                if (Math.random() < 0.9) {  // 90% chance to generate high-priority (orange) dot
+                    let priority = 'high'; 
+                    let weight = Math.random() * 10 + 5;
+                    requests.push(new Request(50, priority, weight, 0));
+                } else {  // 10% chance to generate low-priority (blue) dot
+                    let priority = 'low';
+                    let weight = Math.random() * 10 + 5;
+                    requests.push(new Request(50, priority, weight, 0));
+                }
+            }
+
+            // Clear the canvas and redraw everything
+            queueCtx.clearRect(0, 0, queueCanvas.width, queueCanvas.height);
+
+            // Draw the queue lines
+            queueCtx.beginPath();
+            queueCtx.moveTo(50, 100);
+            queueCtx.lineTo(queueCanvas.width - 50, 100);
+            queueCtx.strokeStyle = 'orange';
+            queueCtx.lineWidth = 2;
+            queueCtx.stroke();
+
+            queueCtx.beginPath();
+            queueCtx.moveTo(50, 250);
+            queueCtx.lineTo(queueCanvas.width - 50, 250);
+            queueCtx.strokeStyle = 'blue';
+            queueCtx.lineWidth = 2;
+            queueCtx.stroke();
+
+            queueCtx.font = "16px Arial";
+            queueCtx.fillStyle = "black";
+            queueCtx.fillText("No Prioritization", 60, 90);  // Above the top queue line
+            queueCtx.fillText("Workload Prioritization", 60, 240);  // Above the bottom queue line
+
+            // Update queue state and prioritization
+            updateQueue();
+
+            // Draw all requests
+            requests.forEach(req => {
+                req.draw();
+            });
+
+            // Keep requests moving and remove off-screen requests
+            requests = requests.filter(req => req.x < queueCanvas.width - 10);
+
+            // Continue animation
+            requestAnimationFrame(animate);
+        }
+
+        // Start the animation
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>
