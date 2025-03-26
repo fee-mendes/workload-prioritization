@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScyllaDB Tablet Scaling</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f9f9f9;
+        }
+        #canvas-container {
+            width: 1600px;
+            height: 600px;
+            border: 1px solid #ccc;
+            overflow: hidden;
+            position: relative;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container">
+        <canvas id="scalingCanvas"></canvas>
+    </div>
+    <script>
+        const container = document.getElementById("canvas-container");
+        const canvas = document.getElementById("scalingCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // Set canvas to match container size
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+
+        const instances = [];
+        let storageGrowth = 50;
+        let lastInstanceAt = 0;
+        let x = 100;
+        let y = canvas.height - 100;
+        let growth = storageGrowth;
+        let nextInstanceThreshold = growth;
+        let scalingFactor = 2;
+        let baseAngle = Math.tan(25 * Math.PI / 180);
+        let storageSize = 1;
+        let step = 0;
+        let pathPoints = [{x: 100, y: canvas.height - 100}];
+
+        function drawInstanceGroup(x, y, count, large = false) {
+            for (let i = 0; i < count; i++) {
+                let offsetY = i * 50;
+                ctx.fillStyle = large ? "#E57373" : "#4CAF50";
+                let width = large ? 120 : 80;
+                let height = large ? 80 : 40;
+
+                ctx.strokeStyle = large ? "#D32F2F" : "#2E7D32";
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.roundRect(x - (width/2), y + 30 + offsetY, width, height, 20);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = "white";
+                ctx.font = "16px Arial";
+                ctx.fillText(large ? "Larger-EC2" : "EC2", x - (width/2) + 10, y + (large ? 76 : 56) + offsetY);
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw path
+            ctx.strokeStyle = "#007BFF";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+
+            for (let i = 1; i < pathPoints.length; i++) {
+                ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+            }
+
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw instances
+            instances.forEach(instance => {
+                if (instance.large) {
+                   drawInstanceGroup(instance.x, instance.y, 1, instance.large);
+                } else {
+                   drawInstanceGroup(instance.x, instance.y, instance.count, instance.large);
+                }
+                ctx.fillStyle = "black";
+                ctx.font = "14px Arial";
+                ctx.fillText(`${instance.storageSize}TB`, instance.x - 10, instance.y - 10);
+            });
+        }
+
+        function animate() {
+            if (step >= 8) {
+                scalingFactor = 0.5;
+                // Reset or pause after scale-in
+                if (step === 9) {
+                    setTimeout(() => {
+                        // Reset all variables to initial state
+                        instances.length = 0;
+                        pathPoints = [{x: 100, y: canvas.height - 100}];
+                        storageGrowth = 50;
+                        lastInstanceAt = 0;
+                        x = 100;
+                        y = canvas.height - 100;
+                        growth = storageGrowth;
+                        nextInstanceThreshold = growth;
+                        scalingFactor = 2;
+                        storageSize = 1;
+                        step = 0;
+                        
+                        draw();
+                        animate();
+                    }, 5000);
+                    return;
+                }
+            }
+
+            // Determine movement based on step
+            if (step < 3) {
+                // Initial growth phase (angled down)
+                x += growth;
+                y -= growth * baseAngle;
+                growth *= scalingFactor;
+            } else if (step < 8) {
+                // Horizontal phase
+                x += 100;
+            } else {
+                // Scale-in phase (angled down)
+                x += growth;
+                y += growth * baseAngle;
+            }
+
+            // Add current point to path
+            pathPoints.push({x, y});
+
+            // Add instances during scale-up phase
+            if (x - lastInstanceAt >= nextInstanceThreshold && step < 8) {
+                instances.push({
+                    x,
+                    y,
+                    count: instances.length + 1,
+                    storageSize,
+                    large: step >= 3 && step < 8
+                });
+                lastInstanceAt = x;
+                nextInstanceThreshold *= scalingFactor;
+		if (step < 2) {
+                   storageSize *= 2;
+		}
+            }
+
+            // Add instances during scale-in phase
+            if (step >= 8 && (step - 8) % 2 === 0) {
+		storageSize = 1;
+                instances.push({
+                    x,
+                    y,
+                    count: 1,
+                    storageSize,
+                    large: false
+                });
+                storageSize /= 2;
+            }
+
+            step++;
+            draw();
+
+            if (step < 10) {
+                setTimeout(animate, 1000);
+            }
+        }
+
+        draw();
+        animate();
+    </script>
+</body>
+</html>
